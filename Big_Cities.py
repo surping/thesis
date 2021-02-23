@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 from scipy import stats
 
 #load CSV
-bigCts = pd.read_csv('/Users/user/Documents/thesis/Big_Cities_Health_Data_Inventory.csv')
+# bigCts = pd.read_csv('/Users/user/Documents/thesis/Big_Cities_Health_Data_Inventory.csv')
+bigCts = pd.read_csv("https://raw.githubusercontent.com/surping/thesis/master/Big_Cities_Health_Data_Inventory.csv")
 bigCts = pd.DataFrame(bigCts,columns=['Indicator Category','Indicator','Year','Gender','Race/ Ethnicity','Place','Value'])
 #noticed by results: two rows had similar description. Fix below
 bigCts['Indicator'] = bigCts['Indicator'].replace(['Opioid-Related Mortality Rate (Age-Adjusted; Per 100,000 people) *These data should not be compared across cities as they have different definitions.'],'Opioid-Related Mortality Rate (Age-Adjusted; Per 100,000 people) *These data should not be compared across cities as they have different definitions')
