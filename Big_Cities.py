@@ -5,14 +5,52 @@ import matplotlib.pyplot as plt
 from scipy import stats
 from sklearn.neighbors import NearestNeighbors
 import time
-import re
 
+import re
+import nltk
+from string import punctuation
+from nltk import word_tokenize
+from nltk.util import ngrams
+from nltk.corpus import stopwords
+from nltk.tokenize import RegexpTokenizer
+from nltk.stem import WordNetLemmatizer,PorterStemmer
+# nltk.download()
+
+# START function and initializations for NLP preprocess 
+
+lemmatizer = WordNetLemmatizer()
+stemmer = PorterStemmer() 
+
+def preprocess(sentence):
+    sentence=str(sentence)
+    sentence = sentence.lower()
+    sentence=sentence.replace('{html}',"") 
+    cleanr = re.compile('<.*?>')
+    cleantext = re.sub(cleanr, '', sentence)
+    rem_url=re.sub(r'http\S+', '',cleantext)
+    rem_num = re.sub('[0-9]+', '', rem_url)
+    tokenizer = RegexpTokenizer(r'\w+')
+    tokens = tokenizer.tokenize(rem_num)  
+    filtered_words = [w for w in tokens if len(w) > 2 if not w in stopwords.words('english')]
+    stem_words=[stemmer.stem(w) for w in filtered_words]
+    lemma_words=[lemmatizer.lemmatize(w) for w in stem_words]
+    return " ".join(filtered_words)
+
+# END function and initializations for NLP preprocess 
 
 #load CSV
 # bigCts = pd.read_csv('/Users/user/Documents/thesis/Big_Cities_Health_Data_Inventory.csv')
 bigCts = pd.read_csv("https://raw.githubusercontent.com/surping/thesis/master/Big_Cities_Health_Data_Inventory.csv")
-bigCts_Full = pd.read_csv("https://raw.githubusercontent.com/surping/thesis/master/Big_Cities_Health_Data_Inventory.csv")
-bigCts = pd.DataFrame(bigCts,columns=['Indicator Category','Indicator','Year','Gender','Race/ Ethnicity','Place','Value'])
+# bigCts_Full = pd.read_csv("https://raw.githubusercontent.com/surping/thesis/master/Big_Cities_Health_Data_Inventory.csv")
+bigCts = pd.DataFrame(bigCts,columns=['Indicator Category', 'Indicator', 'Year', 'Gender', 'Race/ Ethnicity', 'Place', 'Value', 'Source', 'Methods'])
+
+# START NLP preprocess on specific columns
+
+bigCts['Source'] = bigCts['Source'].map(lambda s:preprocess(s)) 
+bigCts['Methods'] = bigCts['Methods'].map(lambda s:preprocess(s)) 
+
+# END NLP preprocess on specific columns
+
 #noticed by results: two rows had similar description. Fix below
 bigCts['Indicator'] = bigCts['Indicator'].replace(['Opioid-Related Mortality Rate (Age-Adjusted; Per 100,000 people) *These data should not be compared across cities as they have different definitions.'],'Opioid-Related Mortality Rate (Age-Adjusted; Per 100,000 people) *These data should not be compared across cities as they have different definitions')
 
@@ -42,8 +80,8 @@ bigCts_dups = bigCts_dups.groupby(['Indicator Category','Indicator','Year','Gend
 #remove from main dataframe the duplicates dataframe (left exception join)
 bigCts = pd.merge(bigCts, bigCts_dups, on=['Indicator Category','Indicator','Year','Gender','Race/ Ethnicity','Place'], how="outer", indicator=True).query('_merge=="left_only"')
 #rename columns
-bigCts = bigCts.drop(['Value_y', '_merge'], axis = 1) 
-bigCts = bigCts.rename({'Value_x': 'Value'}, axis=1)
+bigCts = bigCts.drop(['Value_y', '_merge', 'Source_y', 'Methods_y'], axis = 1) 
+bigCts = bigCts.rename({'Value_x': 'Value', 'Source_x': 'Source', 'Methods_x': 'Methods'}, axis=1)
 #append duplicates subset to main dataframe
 bigCts = pd.concat([bigCts, bigCts_dups]).reset_index(drop=True)
 
@@ -66,71 +104,74 @@ bigCts2014 = bigCts2014[bigCts2014.groupby(['Indicator', 'Gender', 'Race/ Ethnic
 
 end = time.time()
 
-# bigCts2012.boxplot(column='Value', by=['Indicator', 'Gender', 'Race/ Ethnicity'], grid=False, rot = 30, fontsize=6)
-# bigCts2013.boxplot(column='Value', by=['Indicator', 'Gender', 'Race/ Ethnicity'], grid=False, rot = 30, fontsize=6)
-# bigCts2014.boxplot(column='Value', by=['Indicator', 'Gender', 'Race/ Ethnicity'], grid=False, rot = 30, fontsize=6)
+bigCts2012.boxplot(column='Value', by=['Indicator', 'Gender', 'Race/ Ethnicity'], grid=False, rot = 30, fontsize=6)
+bigCts2013.boxplot(column='Value', by=['Indicator', 'Gender', 'Race/ Ethnicity'], grid=False, rot = 30, fontsize=6)
+bigCts2014.boxplot(column='Value', by=['Indicator', 'Gender', 'Race/ Ethnicity'], grid=False, rot = 30, fontsize=6)
 
+plt.show()
 #END statistical method for outliers for specific groups
 
 ###################################################
 ###################################################
 
 #START alorithmical method for outliers for specific groups
+start_algo = time.time()
 
+bigCts_ctg = bigCts[['Indicator', 'Year', 'Gender', 'Race/ Ethnicity', 'Value']]
 
-# bigCts_ctg = bigCts[['Indicator', 'Year', 'Gender', 'Race/ Ethnicity', 'Value']]
+col1 = bigCts_ctg["Indicator"].astype(str) 
+col2 = bigCts_ctg["Gender"].astype(str) 
+col3 = bigCts_ctg["Race/ Ethnicity"].astype(str)
+col4 = bigCts_ctg["Year"].astype(str)
+# change Indicator to custom category id. help for plot and algorithm
+bigCts_ctg['Category_ID'] = (col1+col2+col3+col4).astype(str).rank(method='dense', ascending=False).astype(int)
 
-# col1 = bigCts_ctg["Indicator"].astype(str) 
-# col2 = bigCts_ctg["Gender"].astype(str) 
-# col3 = bigCts_ctg["Race/ Ethnicity"].astype(str)
-# col4 = bigCts_ctg["Year"].astype(str)
-# # change Indicator to custom category id. help for plot and algorithm
-# bigCts_ctg['Category_ID'] = (col1+col2+col3+col4).astype(str).rank(method='dense', ascending=False).astype(int)
+# keep relationship of category_id and indicator
+bigCts_ctg_desc = bigCts_ctg[['Category_ID', 'Indicator', 'Year', 'Gender', 'Race/ Ethnicity', 'Value']]
+bigCts_ctg = bigCts_ctg_desc[['Category_ID','Value']]
 
-# # keep relationship of category_id and indicator
-# bigCts_ctg_desc = bigCts_ctg[['Category_ID', 'Indicator', 'Year', 'Gender', 'Race/ Ethnicity', 'Value']]
+# eliminate groups with less than 4 records, otherwise neighbors not working
+bigCts_ctg = bigCts_ctg.groupby('Category_ID').filter(lambda group: len(group) > 3).sort_index( ascending=False)
 
-# # keep only Category_ID and value to use in algorithm
-# bigCts_ctg = bigCts_ctg_desc[['Category_ID','Value']]
-# bigCts_ctg_list  = bigCts_ctg[['Category_ID']].drop_duplicates().reset_index(drop=True)
+# below i choose one category for test to apply alogrithmical outlier elimination
+# bigCts_ctg = bigCts_ctg[(bigCts_ctg['Category_ID'] == 36) | (bigCts_ctg['Category_ID'] == 37)]
 
-# # below i choose one category for test to apply alogrithmical outlier elimination
-# bigCts_ctg = bigCts_ctg[bigCts_ctg['Category_ID'] == 36]
+bigCts_ctg_grouped = bigCts_ctg.groupby('Category_ID')
 
-# X = bigCts_ctg.values
-# # instantiate model
-# nbrs = NearestNeighbors(n_neighbors = 2)
-# # fit model
-# nbrs.fit(X)
-# # distances and indexes of k-neaighbors from model outputs
-# distances, indexes = nbrs.kneighbors(X)
-# # plot mean of k-distances of each observation
-# plt.plot(distances.mean(axis =1))
-# # visually determine cutoff values > 1.5 for case category 36
-# outlier_index = np.where(distances.mean(axis = 1) > 1.8)
-# # filter outlier values
-# outlier_values = bigCts_ctg.iloc[outlier_index]
+for group_name, df_group in bigCts_ctg_grouped:
 
+    for row_index, row in df_group.iterrows():
+
+        X = df_group.values[:,1:] 
+        # instantiate model
+        nbrs = NearestNeighbors(n_neighbors = 3)
+        # fit model
+        nbrs.fit(X)
+        # distances and indexes of k-neaighbors from model outputs
+        distances, indexes = nbrs.kneighbors(X)
+        # plot mean of k-distances of each observation
+        plt.plot(distances.mean(axis =1))
+        # visually determine cutoff values > 1.5 for case category 36
+        outlier_index = np.where(distances.mean(axis = 1) > 2)
+        # filter outlier values
+        outlier_values = bigCts_ctg.iloc[outlier_index]
+
+bigCts_ctg_desc = pd.merge(bigCts_ctg_desc, outlier_values, on=['Category_ID','Value'], how="outer", indicator=True).query('_merge=="left_only"')
+bigCts_ctg_desc = bigCts_ctg_desc.drop(['_merge'], axis = 1) 
+
+end_algo = time.time()
 #END alorithmical method for outliers for specific groups
 
-# START prepare Methods and Source for NLP
 
-
-bigCts_Full = pd.DataFrame(bigCts_Full,columns=['Indicator', 'Source', 'Methods'])
-bigCts_Full = bigCts_Full.iloc[1110:1125, :]
-bigCts_Full['Methods'] = bigCts_Full['Methods'].apply(str)
-bigCts_Full['Source'] = bigCts_Full['Source'].apply(str)
-bigCts_Full['Methods'] = bigCts_Full['Methods'].map(lambda x: re.sub(r'[^a-zA-Z0-9. ]',r'',x))
-bigCts_Full['Source'] = bigCts_Full['Source'].map(lambda x: re.sub(r'[^a-zA-Z0-9. ]',r'',x))
-
-# END prepare Methods and Source for NLP
-
-plt.show()
 # pd.set_option('display.max_rows', None)
-print(bigCts_Full)
-# print(outlier_values)
+# print(bigCts)
 # print(bigCts_ctg)
-# print(bigCts_ctg_list)
-# print(end - start)
+print(bigCts2012)
+print(bigCts2013)
+print(bigCts2014)
+print(bigCts_ctg_desc)
+print(end - start)
+print(end_algo - start_algo)
+plt.show()
 
 
